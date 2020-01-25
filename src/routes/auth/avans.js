@@ -6,9 +6,9 @@ const AvansStrategy = require('passport-avans').Strategy;
 const router = express.Router();
 
 passport.use(new AvansStrategy({
-        consumerKey: 'a426c4d5174434743b80fb514446fe221093df73',
-        consumerSecret: '10b969d02eb3dc1d198e4b47df899887fa60baec',
-        callbackURL: 'http://localhost:3000/auth/avans/callback'
+        consumerKey: process.env.AVANS_CONSUMER_KEY,
+        consumerSecret: process.env.AVANS_CONSUMER_SECRET,
+        callbackURL: process.env.AVANS_CALLBACK_URL
     },
     (token, tokenSecret, profile, done) => {
         profile.token = token;
