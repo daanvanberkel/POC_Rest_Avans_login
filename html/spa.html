@@ -1,0 +1,66 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>POC Avans Login</title>
+</head>
+<body>
+<div id="loading">Laden... Een ogenblik geduld a.u.b.</div>
+
+<div id="login-container" style="display: none;">
+    <a href="#">Inloggen met Avans</a>
+</div>
+
+<div id="loggedin-container" style="display: none"></div>
+</body>
+<script>
+    let url = new URL(window.location);
+
+    if (url.searchParams.has('access_token')) {
+        localStorage.setItem('access_token', url.searchParams.get('access_token'));
+    }
+
+    let loadingEl = document.getElementById('loading');
+    let loginContainerEl = document.getElementById('login-container');
+    let loggedInContainerEl = document.getElementById('loggedin-container');
+
+    getUser().then(user => {
+        // Show user details
+
+        loggedInContainerEl.innerHTML = `<pre>${JSON.stringify(user)}</pre>`;
+        loadingEl.style.display = 'none';
+        loggedInContainerEl.style.display = 'block';
+    }).catch(error => {
+        let callback = new URL(window.location);
+        let loginUrl = new URL(`${callback.protocol}//${callback.host}/auth/avans`);
+        loginUrl.searchParams.append('callback', callback.toString());
+
+        document.querySelector('#login-container a').href = loginUrl.toString();
+
+        // Show login button
+        loadingEl.style.display = 'none';
+        loginContainerEl.style.display = 'block';
+    });
+    
+    async function getUser() {
+        let access_token = localStorage.getItem('access_token');
+        
+        if (!access_token) {
+            throw new Error("No access token in localstorage");
+        }
+        
+        let response = await fetch('/me', {
+            headers: new Headers({
+                'Authorization': `Bearer ${access_token}`
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Er is een fout opgetreden met het ophalen van de user details');
+        }
+
+        return await response.json();
+    }
+</script>
+</html>
