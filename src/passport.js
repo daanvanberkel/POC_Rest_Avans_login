@@ -11,4 +11,4 @@ passport.use(new JwtStrategy({
     return cb(null, jwtPayload);
 }));
 
-module.exports = passport.authenticate('jwt', {session: false});
+module.exports = passport;
