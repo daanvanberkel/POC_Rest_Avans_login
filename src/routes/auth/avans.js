@@ -25,8 +25,11 @@ router.use(passport.initialize());
 router.use(passport.session());
 
 router.get('/', (req, res, next) => {
-    if (req.query.callback) {
-        req.session.callback = req.query.callback;
+    let callback = req.query.callback || req.query.redirect_uri || '';
+    req.session.oauth_state = (req.query.state || '');
+
+    if (callback) {
+        req.session.callback = callback;
     } else {
         res.status(400).send({error: 'Missing callback'});
         return;
@@ -58,6 +61,10 @@ router.get('/callback', passport.authenticate('avans', { failureRedirect: '/auth
 
         let callback = new URL(req.session.callback);
         callback.searchParams.append('access_token', token);
+
+        if (req.session.oauth_state) {
+            callback.searchParams.append('state', req.session.oauth_state);
+        }
 
         res.redirect(callback.toString());
     });
