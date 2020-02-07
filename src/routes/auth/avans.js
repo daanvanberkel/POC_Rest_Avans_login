@@ -3,6 +3,7 @@ const passport = require('passport');
 const session = require('express-session');
 const jwt = require('jsonwebtoken');
 const AvansStrategy = require('passport-avans').Strategy;
+const uuid = require('uuid/v4');
 const router = express.Router();
 
 passport.use(new AvansStrategy({
@@ -37,6 +38,8 @@ router.use(session(sess));
 router.use(passport.initialize());
 router.use(passport.session());
 
+const sessions = {};
+
 router.get('/', (req, res, next) => {
     let callback = req.query.callback || req.query.redirect_uri || '';
     req.session.oauth_state = (req.query.state || '');
@@ -47,39 +50,62 @@ router.get('/', (req, res, next) => {
         res.status(400).send({error: 'Missing callback'});
         return;
     }
-    next();
-}, passport.authenticate('avans'));
 
-router.get('/callback', passport.authenticate('avans', { failureRedirect: '/auth/avans' }), (req, res, next) => {
-    if (!req.session.callback) {
-        let error = new Error("Missing callback to redirect to");
-        error.status = 400;
-        next(error);
-        return;
+    let sessionId = uuid();
+    sessions[sessionId] = req.session;
+
+    let apiCallbackUrl = process.env.AVANS_CALLBACK_URL + '/' + sessionId;
+
+    passport.authenticate('avans', { callbackURL: apiCallbackUrl })(req, res, next);
+});
+
+router.get('/callback/:session', (req, res, next) => {
+    let sessionId = req.params.session;
+
+    if (sessionId) {
+        req.session = sessions[sessionId];
     }
 
-    if (!req.user) {
-        let error = new Error("Avans authentication failed");
-        error.status = 500;
-        next(error);
-        return;
-    }
+    passport.authenticate('avans', { failureRedirect: '/auth/avans' }, (err, user, info) => {
+        if (sessionId) {
+            delete sessions[sessionId];
+        }
 
-    jwt.sign(req.user, process.env.JWT_SECRET, (err, token) => {
         if (err) {
             next(err);
             return;
         }
 
-        let callback = new URL(req.session.callback);
-        callback.searchParams.append('access_token', token);
-
-        if (req.session.oauth_state) {
-            callback.searchParams.append('state', req.session.oauth_state);
+        if (!req.session.callback) {
+            let error = new Error("Missing callback to redirect to");
+            error.status = 400;
+            next(error);
+            return;
         }
 
-        res.redirect(callback.toString());
-    });
+        if (!user) {
+            let error = new Error("Avans authentication failed");
+            error.status = 500;
+            next(error);
+            return;
+        }
+
+        jwt.sign(user, process.env.JWT_SECRET, (err, token) => {
+            if (err) {
+                next(err);
+                return;
+            }
+
+            let callback = new URL(req.session.callback);
+            callback.searchParams.append('access_token', token);
+
+            if (req.session.oauth_state) {
+                callback.searchParams.append('state', req.session.oauth_state);
+            }
+
+            res.redirect(callback.toString());
+        });
+    })(req, res, next);
 });
 
 module.exports = router;
