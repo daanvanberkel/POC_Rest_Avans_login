@@ -22,27 +22,38 @@ passport.deserializeUser((profile, done) => done(null, profile));
 
 let sess = {
     secret: process.env.SESSION_SECRET,
+    resave: true,
+    saveUninitialized: true,
     cookie: {
         maxAge: 3600000
     }
 };
 
-if (router.get('env') === 'production') {
+if (process.env.NODE_ENV === 'production') {
     sess.cookie.secure = true;
 }
 
-router.use(session({secret: process.env.SESSION_SECRET, resave: true, saveUninitialized: true}));
+router.use(session(sess));
 router.use(passport.initialize());
 router.use(passport.session());
 
 router.get('/', (req, res, next) => {
     let callback = req.query.callback || req.query.redirect_uri || '';
-    req.session.oauth_state = (req.query.state || '');
+    let state = (req.query.state || '');
+    req.session.oauth_state = state;
 
     if (callback) {
         req.session.callback = callback;
     } else {
         res.status(400).send({error: 'Missing callback'});
+        return;
+    }
+
+    if (req.query.client_id && req.query.client_id === 'speedmeetandroid') {
+        // Let android send user to external browser before redirecting to avans,
+        // otherwise the session is lost and authentication will fail.
+
+        res.redirect(`/?state=${state}&callback=${callback}`);
         return;
     }
 
