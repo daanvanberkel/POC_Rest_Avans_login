@@ -6,6 +6,13 @@ const passport = require('./src/passport');
 
 const app = express();
 
+console.log('Environment', app.get('env'));
+
+// Trust proxy in 'production'
+if (app.get('env') === 'production') {
+    app.set('trust proxy', true);
+}
+
 // CORS
 app.use(cors());
 

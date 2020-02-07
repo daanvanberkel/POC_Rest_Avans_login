@@ -22,13 +22,12 @@ passport.deserializeUser((profile, done) => done(null, profile));
 
 let sess = {
     secret: process.env.SESSION_SECRET,
-    resave: true,
-    saveUninitialized: true,
-    cookie: {}
+    cookie: {
+        maxAge: 3600000
+    }
 };
 
 if (router.get('env') === 'production') {
-    router.set('trust proxy', 1);
     sess.cookie.secure = true;
 }
 
