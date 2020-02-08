@@ -42,7 +42,15 @@ const sessions = {};
 
 router.get('/', (req, res, next) => {
     let callback = req.query.callback || req.query.redirect_uri || '';
+    let client_id = req.query.client_id || '';
+
     req.session.oauth_state = (req.query.state || '');
+
+    // Use custom scheme for android client to App Link or Deeplink
+    // @see https://capacitor.ionicframework.com/docs/android/configuration/
+    if (client_id && client_id === 'speedmeetand') {
+        callback = process.env.AVANS_ANDROID_CALLBACK;
+    }
 
     if (callback) {
         req.session.callback = callback;
@@ -51,8 +59,13 @@ router.get('/', (req, res, next) => {
         return;
     }
 
+    // Save session in object, the android client starts the request in an InAppBrowser, but ends it in Google Chrome,
+    // so the cookie is lost in the process
     let sessionId = uuid();
-    sessions[sessionId] = req.session;
+    sessions[sessionId] = {
+        session: req.session,
+        date: Date.now()
+    };
 
     let apiCallbackUrl = process.env.AVANS_CALLBACK_URL + '/' + sessionId;
 
@@ -62,8 +75,9 @@ router.get('/', (req, res, next) => {
 router.get('/callback/:session', (req, res, next) => {
     let sessionId = req.params.session;
 
+    // Load session from object
     if (sessionId) {
-        req.session = sessions[sessionId];
+        req.session = sessions[sessionId].session;
     }
 
     passport.authenticate('avans', { failureRedirect: '/auth/avans' }, (err, user, info) => {
@@ -107,5 +121,14 @@ router.get('/callback/:session', (req, res, next) => {
         });
     })(req, res, next);
 });
+
+// Remove old session that are not in use anymore
+setInterval(function() {
+    Object.entries(sessions).forEach(session => {
+        if (session[1].date < Date.now() - (60 * 60 * 1000)) { // One hour
+            delete sessions[session[0]];
+        }
+    });
+}, 5 * 60 * 1000); // 5 minutes
 
 module.exports = router;
