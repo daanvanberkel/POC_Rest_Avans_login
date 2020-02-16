@@ -1,28 +1,36 @@
-const io = require('socket.io')();
-const passport = require('./passport');
+import socketio from "socket.io";
+import passport from "./passport";
+import {Handshake, Server, Socket} from "socket.io";
+import {Profile} from "./models/profile";
+
+const io: Server = socketio();
 
 // Authenticate client
-io.use((socket, next) => {
-    let req = socket.handshake;
+io.use((socket: Socket, next) => {
+    let req: Handshake = socket.handshake;
 
     console.log('Starting to authenticate for socket');
 
-    passport.authenticate('jwt', (info, user, err) => {
-        if (err) {
+    passport.authenticate('jwt', (err: Error, user: Profile, info) => {
+        if (err || !user) {
             next(new Error('Not authenticated'));
             return;
         }
 
+        // @ts-ignore not official supported, but it works
         socket.user = user;
         next();
     })(req, null, next);
 });
 
 // Handle messages
-let selectedSlots = [];
+let selectedSlots: any[] = [];
 
-io.on('connection', function(socket) {
-    console.log(`${socket.user.id} connected`);
+io.on('connection', function(socket: Socket) {
+    // @ts-ignore not official supported, but it works
+    let user: Profile = socket.user;
+
+    console.log(`${user.id} connected`);
 
     for (let slot of selectedSlots) {
         socket.emit('select', slot);
@@ -47,4 +55,4 @@ io.on('connection', function(socket) {
     })
 });
 
-module.exports = io;
+export default io;

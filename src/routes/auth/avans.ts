@@ -1,48 +1,54 @@
-const express = require('express');
-const passport = require('passport');
-const session = require('express-session');
-const jwt = require('jsonwebtoken');
+import passport from "../../passport";
+import express from 'express';
+import {NextFunction, Request, Response, Router} from "express";
+import {Profile} from "../../models/profile";
+import session, {SessionOptions} from "express-session";
+import {HttpError} from "../../httperror";
+import uuid from "uuid/v4";
+import {sign} from 'jsonwebtoken';
 const AvansStrategy = require('passport-avans').Strategy;
-const uuid = require('uuid/v4');
-const router = express.Router();
+
+const router: Router = express.Router();
 
 passport.use(new AvansStrategy({
         consumerKey: process.env.AVANS_CONSUMER_KEY,
         consumerSecret: process.env.AVANS_CONSUMER_SECRET,
         callbackURL: process.env.AVANS_CALLBACK_URL
     },
-    (token, tokenSecret, profile, done) => {
+    (token: string, tokenSecret: string, profile: Profile, done: (error: Error|null, profile: Profile) => void) => {
         profile.token = token;
         profile.tokenSecret = tokenSecret;
         done(null, profile);
     }
 ));
 
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((profile, done) => done(null, profile));
+passport.serializeUser((user: Profile, done: (error: Error|null, profile: Profile) => void) => done(null, user));
+passport.deserializeUser((profile: Profile, done: (error: Error|null, profile: Profile) => void) => done(null, profile));
 
-let sess = {
-    secret: process.env.SESSION_SECRET,
+let sess: SessionOptions = {
+    secret: process.env.SESSION_SECRET || '',
     resave: true,
     saveUninitialized: true,
     cookie: {
-        maxAge: 3600000
+        maxAge: 3600000,
+        secure: process.env.NODE_ENV == 'production' ? true : 'auto'
     }
 };
-
-if (process.env.NODE_ENV === 'production') {
-    sess.cookie.secure = true;
-}
 
 router.use(session(sess));
 router.use(passport.initialize());
 router.use(passport.session());
 
-const sessions = {};
+const sessions: any = {};
 
-router.get('/', (req, res, next) => {
+router.get('/', (req: Request, res: Response, next: NextFunction) => {
     let callback = req.query.callback || req.query.redirect_uri || '';
     let client_id = req.query.client_id || '';
+
+    if (!req.session) {
+        res.status(500).send({error: 'Missing session'});
+        return;
+    }
 
     req.session.oauth_state = (req.query.state || '');
 
@@ -69,18 +75,19 @@ router.get('/', (req, res, next) => {
 
     let apiCallbackUrl = process.env.AVANS_CALLBACK_URL + '/' + sessionId;
 
+    // @ts-ignore callbackURL is in passport-avans, bus has no .d.ts file
     passport.authenticate('avans', { callbackURL: apiCallbackUrl })(req, res, next);
 });
 
-router.get('/callback/:session', (req, res, next) => {
-    let sessionId = req.params.session;
+router.get('/callback/:session', (req: Request, res: Response, next: NextFunction) => {
+    let sessionId: string = req.params.session;
 
     // Load session from object
     if (sessionId) {
         req.session = sessions[sessionId].session;
     }
 
-    passport.authenticate('avans', { failureRedirect: '/auth/avans' }, (err, user, info) => {
+    passport.authenticate('avans', { failureRedirect: '/auth/avans' }, (err: Error, user: Profile, info: any) => {
         if (sessionId) {
             delete sessions[sessionId];
         }
@@ -90,23 +97,37 @@ router.get('/callback/:session', (req, res, next) => {
             return;
         }
 
+        if (!req.session) {
+            let error = new HttpError("Missing session");
+            error.status = 500;
+            next(error);
+            return;
+        }
+
         if (!req.session.callback) {
-            let error = new Error("Missing callback to redirect to");
+            let error = new HttpError("Missing callback to redirect to");
             error.status = 400;
             next(error);
             return;
         }
 
         if (!user) {
-            let error = new Error("Avans authentication failed");
+            let error = new HttpError("Avans authentication failed");
             error.status = 500;
             next(error);
             return;
         }
 
-        jwt.sign(user, process.env.JWT_SECRET, (err, token) => {
+        sign(user, process.env.JWT_SECRET || '', (err: Error, token: string) => {
             if (err) {
                 next(err);
+                return;
+            }
+
+            if (!req.session) {
+                let error = new HttpError("Missing session");
+                error.status = 500;
+                next(error);
                 return;
             }
 
@@ -125,10 +146,11 @@ router.get('/callback/:session', (req, res, next) => {
 // Remove old session that are not in use anymore
 setInterval(function() {
     Object.entries(sessions).forEach(session => {
-        if (session[1].date < Date.now() - (60 * 60 * 1000)) { // One hour
+        // @ts-ignore
+        if (session[1].date < Date.now() - (30 * 60 * 1000)) { // 30 minutes
             delete sessions[session[0]];
         }
     });
 }, 5 * 60 * 1000); // 5 minutes
 
-module.exports = router;
+export = router;
